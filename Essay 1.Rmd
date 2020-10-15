@@ -1,0 +1,1520 @@
+---
+title: "Essay I: What are the market power effects on airline price premiums?"
+author: "[Joao Ricardo Tonin](https://www.linkedin.com/in/jrtonin/)"
+email: "jrtonin@gmail.com"
+date: "06/06/2020"  
+output: 
+  html_document: 
+    number_sections: true
+    toc: true
+    toc_depth: 3
+    theme: united 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+{ 
+  # Check if the packages that we need are installed
+  want = c("tidyverse", "data.table", "readr", "stringr", "zoo", "plyr", "plm", "texreg", "kableExtra",
+           "dplyr", "lubridate", "tidyr", "gganimate", "geosphere", "ggpubr", "treemapify", "GGally")
+  have = want %in% rownames(installed.packages())
+  # Install the packages that we miss
+  if ( any(!have) ) { install.packages( want[!have] ) }
+  # Load the packages
+  junk <- lapply(want, library, character.only = T)
+  # Remove the objects we created
+  rm(have, want, junk)
+} # Import packages
+
+
+```
+
+# knowing the Brazilian commercial aviation database between 2010 and 2019
+
+```{r database, include = FALSE}
+
+
+{
+  {
+    {
+      
+      # Step 1: set the working directory (where files are saved)
+      setwd("C:/TESE/RDS_VOLUME") 
+      
+      # Step 2: get all the right file names
+      file_names = list.files(getwd())
+      file_names = file_names[grepl(".rds",file_names)]
+      
+      # Step 3: get the read.csv function working
+      files = readRDS("1 .rds")
+      
+      # Step 4: use lapply to apply the read.csv function to all values of file_names
+      files = lapply(file_names, readRDS)
+      files = rbindlist(files, fill = TRUE)
+      
+      # check structure of new data set
+      str(files)
+      
+      # rename
+      VOLUME = files
+      
+      
+    } # Join databases
+    
+    # Dropping unnecessary databases
+    remove(list = c("files", "file_names"))
+    
+    {
+      
+      # Step 1: set the working directory (where files are saved)
+      setwd("C:/TESE/RDS_PRICES") 
+      
+      # Step 2: get all the right file names
+      file_names = list.files(getwd())
+      file_names = file_names[grepl(".rds",file_names)]
+      
+      # Step 3: get the read.csv function working
+      files = readRDS("1 .rds")
+      
+      # Step 4: use lapply to apply the read.csv function to all values of file_names
+      files = lapply(file_names, readRDS)
+      files = rbindlist(files, fill = TRUE)
+      
+      # check structure of new data set
+      str(files)
+      
+      # rename
+      PRICES = files
+      
+      
+    } # Join databases
+    
+    # Dropping unnecessary databases
+    remove(list = c("files", "file_names"))
+    
+    {
+      # setting the directory  
+      setwd("C:/TESE/PARAMETROS") 
+      
+      ROUTE <- read_delim("ROUTE.csv", ";", escape_double = FALSE, 
+                          locale = locale(decimal_mark = ",", grouping_mark = ".", 
+                                          encoding = "ISO-8859-1"), trim_ws = TRUE)
+      
+      ROUTE = ROUTE %>% rowwise() %>%
+        mutate(distance = distHaversine(cbind(arr_lon, arr_lat), cbind(dep_lon, dep_lat))) %>%
+        mutate(distance = distance / 1000)
+      
+      
+    } # calculating distance
+    
+    {
+      {
+        
+        # Step 1: set the working directory (where files are saved)
+        setwd("C:/TESE/POP/")
+        
+        # Step 2: get all the right file names
+        file_names = list.files(getwd())
+        file_names = file_names[grepl(".csv",file_names)]
+        
+        # Step 3: get the read.csv function working
+        files =  read_delim("POP2010.csv", ";", 
+                            escape_double = FALSE, locale = locale(decimal_mark = ",", 
+                                                                   grouping_mark = ".", encoding = "ISO-8859-1"), 
+                            trim_ws = TRUE)
+        
+        # Step 4: use lapply to apply the read.csv function to all values of file_names
+        files = lapply(file_names, read_delim, ";",
+                       escape_double = FALSE, 
+                       locale = locale(decimal_mark = ",", grouping_mark = ".", encoding = "ISO-8859-1" ),
+                       trim_ws = TRUE)
+        
+        
+        files = do.call(rbind, files)
+        
+        # Step 5: Set column names
+        names(files) = c("CODIGO", "NOME", "POP", "ANO")
+        
+        # check structure of new data set
+        str(files)
+        
+        POP = files
+        
+      } # Import municipal population per year
+      {
+        # Import database
+        MICRODIV = read_delim("C:/TESE/PARAMETROS/MICROREGIAO.csv", 
+                              ";", escape_double = FALSE, 
+                              locale = locale(decimal_mark = ",", grouping_mark = ".", encoding = "ISO-8859-1"), 
+                              trim_ws = TRUE)
+        
+      } # Import territorial subdivision - microregion
+      {
+        # Import database
+        MICROAREA = read_delim("C:/TESE/PARAMETROS/AREA.csv", 
+                               ";", escape_double = FALSE, 
+                               locale = locale(decimal_mark = ",", grouping_mark = ".", encoding = "ISO-8859-1"), 
+                               trim_ws = TRUE)
+      } # Import micoregion area
+      {
+        # Join microrregião information
+        POP = POP %>% left_join(MICRODIV %>% select(CODIGO, COD_MICRO, NOM_MICRO), by = c("CODIGO" = "CODIGO"))
+        
+        # Summarize year population by microregion
+        POP_MICRO = POP %>% group_by(ANO, COD_MICRO) %>% dplyr::summarise(POP_MICRO = sum(POP))
+        
+        # Join microregion population and area in POP database
+        POP = POP %>% left_join(POP_MICRO, by = c("ANO" = "ANO", "COD_MICRO" = "COD_MICRO")) %>%
+          left_join(MICROAREA %>% mutate(MICRO_AREA = AREA) %>% select(COD_MICRO, MICRO_AREA), 
+                    by = c("COD_MICRO" = "COD_MICRO"))
+        
+        
+      } # Organize database
+      
+    } # Importing databases IBGE - Population and territorial area
+    
+  } # Fast import
+  
+  {
+  # Joining databases
+  DATA = VOLUME %>% left_join(PRICES, by = c("ano" = "ANO",
+                                             "mes" = "MES",
+                                             "company" = "EMPRESA",
+                                             "air_arr" = "ORIGEM",
+                                             "air_dep" = "DESTINO"))
+  
+  
+  # Identifying as routes with NA's
+  ROTASNA = DATA %>% filter(is.na(revenue)) %>% 
+    group_by(air_arr, air_dep, ano, mes) %>% dplyr::summarise(revenue = sum(revenue),
+                                                                   N = n(),
+                                                                   ISNA = TRUE)
+  
+  # Joining NA's information in DATA 
+  DATA = DATA %>% left_join(ROTASNA %>% select(ano, mes, air_arr, air_dep, ISNA), 
+                            by = c("ano", "mes", "air_arr", "air_dep"))
+  
+  # Calculating number of companies per route
+  ROTASNA =  DATA %>% filter(is.na(ISNA)) %>% group_by(ano, mes, air_arr, air_dep) %>% dplyr::summarise(N=n())
+  
+  
+  # Join information of a number of companies per route in the database
+  DATA = DATA %>% left_join(ROTASNA %>% select(ano, mes, air_arr, air_dep, N), 
+                            by = c("ano", "mes", "air_arr", "air_dep"))
+  
+  # Filtering final database
+  DATA = DATA %>% filter(is.na(ISNA) & N > 1)
+  
+  # Inserting market structure information by company category
+  BASE1 = DATA %>% arrange(ano, mes, air_arr, air_dep, desc(revenue)) %>%
+    group_by(ano, mes, air_arr, air_dep) %>% dplyr::mutate(id = sequence(n())) %>%
+    dplyr::mutate(mercado = case_when(id == 1 ~ "lider",
+                                    TRUE ~ "seguidora"))
+  
+  LBASE1 = BASE1 %>% mutate(pas_paid = log(pas_paid),
+                           pas_free = log(pas_free),
+                           bag_free = log(bag_free),
+                           bag_extra = log(bag_extra),
+                           payload = log(payload),
+                           freeload = log(freeload),
+                           postload = log(postload),
+                           freq = log(freq),
+                           price = log(revenue/seat),
+                           seat = log(seat), 
+                           revenue = log(revenue))
+  
+  ARShare = BASE1 %>% group_by(ano, mes, air_arr, air_dep) %>% 
+    dplyr::summarise(tfreq = sum(freq),
+                     tseat = sum(seat)) 
+    
+  # Join information in BASE1 database
+  BASE1 = BASE1 %>% left_join(ARShare, by = c("ano", "mes", "air_arr", "air_dep")) %>%
+    mutate(FreqShare = freq/tfreq,
+           RouteShare = seat/tseat) %>%
+    mutate(FreqShare2 = FreqShare^2,
+           RouteShare2 = RouteShare^2 )
+  
+  HHIrs = BASE1 %>% group_by(ano, mes, air_arr, air_dep) %>% 
+    dplyr::summarise(FreqHHI = sum(FreqShare2),
+                     RouteHHI = sum(RouteShare2))
+  
+  BASE1 = BASE1 %>% dplyr::select(ano, mes, air_arr, air_dep, company, pas_paid, pas_free, bag_free, bag_extra, payload, 
+                                    freeload, postload, freq, seat, revenue, N, id, mercado, FreqShare, RouteShare) %>%
+    left_join(HHIrs, by = c("ano", "mes", "air_arr", "air_dep"))
+  
+  
+  
+  tca_seat = BASE1 %>% group_by(ano, mes, air_arr, company) %>% 
+    dplyr::summarise(tca_seat = sum(seat)) 
+  
+  ta_seat = BASE1 %>% group_by(ano, mes, air_arr) %>% 
+    dplyr::summarise(ta_seat = sum(seat)) 
+  
+  tca_seat = tca_seat %>% left_join(ta_seat, by = c("ano", "mes", "air_arr")) %>%
+    mutate(ArrShare = tca_seat/ta_seat) %>%
+    mutate(ArrShare2 = ArrShare^2)
+  
+  ArrHHI = tca_seat %>% group_by(ano, mes, air_arr) %>% 
+    dplyr::summarise(ArrHHI = sum(ArrShare2))
+  
+  tca_seat = tca_seat %>% left_join(ArrHHI, by = c("ano", "mes", "air_arr")) %>%
+    select(ano, mes, air_arr, company, ArrShare, ArrHHI)
+  
+  BASE1 = BASE1 %>% left_join(tca_seat, by = c("ano", "mes", "air_arr", "company")) %>%
+    dplyr::select(ano, mes, air_arr, air_dep, company, pas_paid, pas_free, bag_free, bag_extra, payload, 
+                                    freeload, postload, freq, seat, revenue, N, id, mercado, FreqShare, RouteShare, 
+                                    FreqHHI, RouteHHI, ArrShare,ArrHHI) 
+  
+  
+  tcd_seat = BASE1 %>% group_by(ano, mes, air_dep, company) %>% 
+    dplyr::summarise(tcd_seat = sum(seat)) 
+  
+  td_seat = BASE1 %>% group_by(ano, mes, air_dep) %>% 
+    dplyr::summarise(td_seat = sum(seat)) 
+  
+  tcd_seat = tcd_seat %>% left_join(td_seat, by = c("ano", "mes", "air_dep")) %>%
+    mutate(DepShare = tcd_seat/td_seat) %>%
+    mutate(DepShare2 = DepShare^2)
+  
+  DepHHI = tcd_seat %>% group_by(ano, mes, air_dep) %>% 
+    dplyr::summarise(DepHHI = sum(DepShare2))
+  
+  tcd_seat = tcd_seat %>% left_join(DepHHI, by = c("ano", "mes", "air_dep")) %>%
+    select(ano, mes, air_dep, company, DepShare, DepHHI)
+  
+  BASE1 = BASE1 %>% left_join(tcd_seat, by = c("ano", "mes", "air_dep", "company")) %>%
+    dplyr::select(ano, mes, air_arr, air_dep, company, pas_paid, pas_free, bag_free, bag_extra, payload, 
+                  freeload, postload, freq, seat, revenue, N, id, mercado, FreqShare, RouteShare, 
+                  FreqHHI, RouteHHI, ArrShare, ArrHHI, DepShare, DepHHI) 
+  
+  
+  BASE1 = BASE1 %>% left_join(ROUTE %>% select(air_arr, air_dep, cod_arr, cod_dep, distance), by = c("air_arr", "air_dep")) 
+  
+  
+  BASE1 = BASE1 %>% left_join(POP %>% select(CODIGO, ANO, POP_MICRO, MICRO_AREA), by = c("cod_dep" = "CODIGO",
+                                                                                          "ano" = "ANO"))
+  
+  # Changing the column names
+  names(BASE1)[names(BASE1) == "POP_MICRO"] <- "pop_micro_dep"
+  names(BASE1)[names(BASE1) == "MICRO_AREA"] <- "area_micro_dep"  
+  
+  BASE1 = BASE1 %>% left_join(POP %>% select(CODIGO, ANO, POP_MICRO, MICRO_AREA), by = c("cod_arr" = "CODIGO",
+                                                                                           "ano" = "ANO"))
+  
+  # Changing the column names
+  names(BASE1)[names(BASE1) == "POP_MICRO"] <- "pop_micro_arr"
+  names(BASE1)[names(BASE1) == "MICRO_AREA"] <- "area_micro_arr" 
+  
+  # 
+  BASE1 = BASE1 %>% mutate(Turist = case_when(air_dep == "SBAR" ~ TRUE,
+                                              air_dep == "SBCB" ~ TRUE,
+                                              air_dep == "SBDB" ~ TRUE,
+                                              air_dep == "SBFI" ~ TRUE,
+                                              air_dep == "SBFN" ~ TRUE,
+                                              air_dep == "SBFZ" ~ TRUE,
+                                              air_dep == "SBGL" ~ TRUE,
+                                              air_dep == "SBGV" ~ TRUE,
+                                              air_dep == "SBIL" ~ TRUE,
+                                              air_dep == "SBLE" ~ TRUE,
+                                              air_dep == "SBPS" ~ TRUE,
+                                              air_dep == "SBRF" ~ TRUE,
+                                              air_dep == "SBVT" ~ TRUE,
+                                              air_dep == "SBFL" ~ TRUE,
+                                              TRUE ~ FALSE))
+  
+  BASE1 = BASE1 %>% mutate(ArrHub = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE),
+                           DepHUB = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE))
+                                              
+  LBASE1 =  LBASE1 %>% left_join(BASE1 %>% select(ano, mes, air_arr, air_dep,
+                                                 FreqShare, RouteShare, FreqHHI, RouteHHI, ArrShare, ArrHHI, 
+                                                 DepShare, DepHHI, distance, 
+                                                 pop_micro_dep, pop_micro_arr, area_micro_dep, area_micro_arr,
+                                                 Turist, ArrHub, DepHUB), 
+                                by = c("ano", "mes", "air_arr", "air_dep")) %>%
+    mutate(FreqShare = log(FreqShare), 
+           RouteShare = log(RouteShare), 
+           FreqHHI = log(FreqHHI), 
+           RouteHHI = log(RouteHHI), 
+           ArrShare = log(ArrShare), 
+           ArrHHI = log(ArrHHI), 
+           DepShare = log(DepShare), 
+           DepHHI = log(DepHHI), 
+           distance = log(distance), 
+           pop_micro_dep = log(pop_micro_dep), 
+           pop_micro_arr = log(pop_micro_arr), 
+           area_micro_dep = log(area_micro_dep), 
+           area_micro_arr = log(area_micro_arr))
+  
+  is.na(LBASE1)<-sapply(LBASE1, is.infinite)
+  LBASE1[is.na(LBASE1)]<-0
+
+  
+  # Dropping unnecessary databases
+  remove(list = c("ArrHHI", "ARShare", "DepHHI", "HHIrs", "ROTASNA", "ta_seat", "tca_seat", "tcd_seat","td_seat" ))
+
+} # Transforming the BASE1 database (individual company data)
+
+  {
+
+  BASE2 = BASE1 %>% group_by(ano, mes, air_arr, air_dep, mercado) %>% 
+    dplyr::summarise(pas_paid = sum(pas_paid), 
+                     pas_free = sum(pas_free),
+                     bag_free = sum(bag_free),
+                     bag_extra = sum(bag_extra),
+                     payload = sum(payload),
+                     freeload = sum(freeload),
+                     postload = sum(postload),
+                     freq = sum(freq),
+                     seat = sum(seat),
+                     revenue = sum(revenue))
+
+  lider = BASE2 %>% filter(mercado == "lider")
+  seguidora = BASE2 %>% filter(mercado == "seguidora")
+  
+  BASE2 = left_join(lider, seguidora, by = c("ano", "mes", "air_arr", "air_dep")) 
+  
+  
+  BASE2 = BASE2 %>% mutate(pas_paid = pas_paid.x - pas_paid.y, 
+                           pas_free = pas_free.x - pas_free.y,
+                           bag_free = bag_free.x - bag_free.y,
+                           bag_extra = bag_extra.x - bag_extra.y,
+                           payload = payload.x - payload.y,
+                           freeload = freeload.x - freeload.y,
+                           postload = postload.x - postload.y,
+                           freq = freq.x - freq.y,
+                           seat = seat.x - seat.y,
+                           revenue = revenue.x - revenue.y) %>%
+    group_by(ano, mes, air_arr, air_dep) %>%
+    select(ano, mes, air_arr, air_dep, pas_paid, pas_free, bag_free, 
+           bag_extra, payload, freeload, postload, freq, seat, revenue)
+  
+
+  CONTROL = BASE1 %>% group_by(ano, mes, air_arr, air_dep) %>% dplyr::summarise(N = mean(N),
+                                                                                FreqHHI = mean(FreqHHI),
+                                                                                RouteHHI = mean(RouteHHI),
+                                                                                ArrHHI = mean(ArrHHI),
+                                                                                DepHHI = mean(DepHHI),
+                                                                                distance = mean(distance),
+                                                                                pop_micro_dep = mean(pop_micro_dep),
+                                                                                area_micro_dep = mean(area_micro_dep),
+                                                                                pop_micro_arr = mean(pop_micro_arr),
+                                                                                area_micro_arr =  mean(area_micro_arr))
+  
+  BASE2 = BASE2 %>% left_join(CONTROL, by = c("ano", "mes", "air_dep", "air_arr"))
+  
+  # 
+  BASE2 = BASE2 %>% mutate(Turist = case_when(air_dep == "SBAR" ~ TRUE,
+                                              air_dep == "SBCB" ~ TRUE,
+                                              air_dep == "SBDB" ~ TRUE,
+                                              air_dep == "SBFI" ~ TRUE,
+                                              air_dep == "SBFN" ~ TRUE,
+                                              air_dep == "SBFZ" ~ TRUE,
+                                              air_dep == "SBGL" ~ TRUE,
+                                              air_dep == "SBGV" ~ TRUE,
+                                              air_dep == "SBIL" ~ TRUE,
+                                              air_dep == "SBLE" ~ TRUE,
+                                              air_dep == "SBPS" ~ TRUE,
+                                              air_dep == "SBRF" ~ TRUE,
+                                              air_dep == "SBVT" ~ TRUE,
+                                              air_dep == "SBFL" ~ TRUE,
+                                              TRUE ~ FALSE))
+  
+  BASE2 = BASE2 %>% mutate(ArrHub = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE),
+                           DepHUB = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE))
+  
+  LBASE2 = BASE1 %>% group_by(ano, mes, air_arr, air_dep, mercado) %>% 
+    dplyr::summarise(pas_paid = sum(pas_paid), 
+                     pas_free = sum(pas_free),
+                     bag_free = sum(bag_free),
+                     bag_extra = sum(bag_extra),
+                     payload = sum(payload),
+                     freeload = sum(freeload),
+                     postload = sum(postload),
+                     freq = sum(freq),
+                     seat = sum(seat),
+                     revenue = sum(revenue)) %>%
+    mutate(pas_paid = log(pas_paid),
+           pas_free = log(pas_free),
+           bag_free = log(bag_free),
+           bag_extra = log(bag_extra),
+           payload = log(payload),
+           freeload =  log(freeload),
+           postload = log(postload),
+           freq = log(freq),
+           seat = log(seat),
+           revenue = log(revenue),
+           price = log(revenue/seat))
+  
+  is.na(LBASE2)<-sapply(LBASE2, is.infinite)
+  LBASE2[is.na(LBASE2)]<-0
+  
+  lider = LBASE2 %>% filter(mercado == "lider")
+  seguidora = LBASE2 %>% filter(mercado == "seguidora")
+  
+  LBASE2 = left_join(lider, seguidora, by = c("ano", "mes", "air_arr", "air_dep")) 
+  
+  
+  LBASE2 = LBASE2 %>% mutate(pas_paid = pas_paid.x - pas_paid.y, 
+                           pas_free = pas_free.x - pas_free.y,
+                           bag_free = bag_free.x - bag_free.y,
+                           bag_extra = bag_extra.x - bag_extra.y,
+                           payload = payload.x - payload.y,
+                           freeload = freeload.x - freeload.y,
+                           postload = postload.x - postload.y,
+                           freq = freq.x - freq.y,
+                           seat = seat.x - seat.y,
+                           revenue = revenue.x - revenue.y,
+                           price = price.x - price.y) %>%
+    group_by(ano, mes, air_arr, air_dep) %>%
+    select(ano, mes, air_arr, air_dep, pas_paid, pas_free, bag_free, 
+           bag_extra, payload, freeload, postload, freq, seat, revenue, price)
+  
+  
+  CONTROL = LBASE1 %>% group_by(ano, mes, air_arr, air_dep) %>% dplyr::summarise(N = mean(N),
+                                                                                FreqHHI = mean(FreqHHI),
+                                                                                RouteHHI = mean(RouteHHI),
+                                                                                ArrHHI = mean(ArrHHI),
+                                                                                DepHHI = mean(DepHHI),
+                                                                                distance = mean(distance),
+                                                                                pop_micro_dep = mean(pop_micro_dep),
+                                                                                area_micro_dep = mean(area_micro_dep),
+                                                                                pop_micro_arr = mean(pop_micro_arr),
+                                                                                area_micro_arr =  mean(area_micro_arr))
+  
+  LBASE2 = LBASE2 %>% left_join(CONTROL, by = c("ano", "mes", "air_dep", "air_arr"))
+  
+  # 
+  LBASE2 = LBASE2 %>% mutate(Turist = case_when(air_dep == "SBAR" ~ TRUE,
+                                              air_dep == "SBCB" ~ TRUE,
+                                              air_dep == "SBDB" ~ TRUE,
+                                              air_dep == "SBFI" ~ TRUE,
+                                              air_dep == "SBFN" ~ TRUE,
+                                              air_dep == "SBFZ" ~ TRUE,
+                                              air_dep == "SBGL" ~ TRUE,
+                                              air_dep == "SBGV" ~ TRUE,
+                                              air_dep == "SBIL" ~ TRUE,
+                                              air_dep == "SBLE" ~ TRUE,
+                                              air_dep == "SBPS" ~ TRUE,
+                                              air_dep == "SBRF" ~ TRUE,
+                                              air_dep == "SBVT" ~ TRUE,
+                                              air_dep == "SBFL" ~ TRUE,
+                                              TRUE ~ FALSE))
+  
+  LBASE2 = LBASE2 %>% mutate(ArrHub = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE),
+                           DepHUB = case_when(air_arr == "SBSP" ~ TRUE,
+                                              air_arr == "SBGL" ~ TRUE,
+                                              air_arr == "SBRJ" ~ TRUE,
+                                              air_arr == "SBGR" ~ TRUE,
+                                              air_arr == "SBBR" ~ TRUE,
+                                              air_arr == "SBFZ" ~ TRUE,
+                                              air_arr == "SBRF" ~ TRUE,
+                                              air_arr == "SBBH" ~ TRUE,
+                                              air_arr == "SBKP" ~ TRUE,
+                                              air_arr == "SBEG" ~ TRUE,
+                                              TRUE ~ FALSE))
+
+
+  
+    } # Transforming the BASE2 database (difference between leading and following companies)
+  
+  {
+    BASE1 = BASE1 %>% mutate(price = revenue / seat) %>%
+      select(ano, mes, air_arr, air_dep, company, mercado, id,
+             pas_paid, pas_free, bag_free, bag_extra, payload, freeload, postload, freq, seat, revenue, price, N,
+             FreqShare, RouteShare, FreqHHI, RouteHHI, ArrShare, ArrHHI, DepShare, DepHHI, distance,
+             pop_micro_dep, pop_micro_arr, area_micro_dep, area_micro_arr,
+             Turist, ArrHub, DepHUB)
+    
+    LBASE1 = LBASE1 %>% 
+      select(ano, mes, air_arr, air_dep, company, mercado, id,
+             pas_paid, pas_free, bag_free, bag_extra, payload, freeload, postload, freq, seat, revenue, price, N,
+             FreqShare, RouteShare, FreqHHI, RouteHHI, ArrShare, ArrHHI, DepShare, DepHHI, distance,
+             pop_micro_dep, pop_micro_arr, area_micro_dep, area_micro_arr,
+             Turist, ArrHub, DepHUB)
+    
+    BASE2 = BASE2 %>% mutate(price = revenue / seat) %>%
+      select(ano, mes, air_arr, air_dep, 
+             pas_paid, pas_free, bag_free, bag_extra, payload, freeload, postload, freq, seat, revenue, price, N,
+             FreqHHI, RouteHHI, ArrHHI, DepHHI, distance,
+             pop_micro_dep, pop_micro_arr, area_micro_dep, area_micro_arr,
+             Turist, ArrHub, DepHUB)
+    
+    LBASE2 = LBASE2 %>%
+      select(ano, mes, air_arr, air_dep, 
+             pas_paid, pas_free, bag_free, bag_extra, payload, freeload, postload, freq, seat, revenue, price, N,
+             FreqHHI, RouteHHI, ArrHHI, DepHHI, distance,
+             pop_micro_dep, pop_micro_arr, area_micro_dep, area_micro_arr,
+             Turist, ArrHub, DepHUB)
+    
+    
+  } # Ending the databases
+  
+  rm(list=setdiff(ls(), c("BASE1", "LBASE1", "BASE2", "LBASE2")))
+  
+} # Transforming final databases - quick cleaning
+
+ # restore the working directory (where files are saved)
+      setwd("C:/TESE") 
+
+```
+
+## Descriptive analysis 
+
+First of all, it takes place a descriptive analysis of the variables: payload (payload), extra baggage (bag_extra), number of flights (freq), number of seats sold (seat) and average prices (price).
+
+
+```{r summary}
+
+# plotting descriptive statistics of the variables
+by(BASE1 %>% group_by(ano) %>% 
+     select(ano, payload, bag_extra, postload, freq, seat, price, ), BASE1$mercado, summary)
+
+```
+
+# Assessment of price behavior
+
+It takes place the price dispersion evaluation of the airline tickets by route and company type (leader and followers) during 2010 and 2019. 
+
+```{r graph1, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# organizing database
+BASE = BASE1 %>% group_by(ano, mercado, air_dep, air_arr) %>% 
+  dplyr::summarise(seat = sum(seat), revenue = sum(revenue)) %>%
+  ungroup() %>%
+  mutate(price = revenue / seat,
+         ano = as.factor(ano),
+         mercado = as.factor(mercado)) %>%
+  arrange(desc(ano))
+
+
+# Create a Facet Wrap for each market
+ggplot(data = BASE, aes(x = ano, y = price, col=mercado)) + 
+  geom_jitter(show.legend = FALSE) +
+  facet_wrap(~ mercado) + 
+  theme_minimal() + 
+  ggtitle("Gráfico 1: Dispersão de Preços das passagens aéreas") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+```
+
+## Avalia��o dos pre�os m�dios pagos (comparativo entre empresas l�der e seguidora)
+
+De forma preeliminar, pelo Gráfico 2 é possível perceber que a curva de demanda da empresa seguidora é mais elástica que a da empresa líder. Nesse caso levanta-se um questionamento, isso acontece devido a estratégia individual de cada firma ou é característica das posições que cada empresa assume no mercado?
+
+```{r price_demand1, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+  ggplot(LBASE1 %>% filter(distance > 0), aes(x = seat, y = price)) +
+  geom_point() +
+  geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+  theme_minimal() +
+  facet_wrap(~ mercado, scales = "free") +
+  ggtitle("Gráfico 2: Comparativo entre preço e demanda")
+
+```
+
+## Share em número de assentos comercializados (empresas líderes e seguidoras)
+
+Abaixo é possível perceber que as empresas Gol (GLO), Tam (TAM), Azul (AZU), One (ONE) e WebJet (WEB) possuem a maior participação do mercado entre os anos 2010 e 2019, e se alternam nas rotas entre líder e seguidora.
+
+```{r price_demand2, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# Selecting variables
+BASE = BASE1 %>% group_by(company, mercado) %>% 
+  dplyr::summarise(seat = sum(seat)) %>%
+  arrange(mercado, desc(seat))
+
+# creating graphics for the leading market companies
+a = ggplot(BASE %>% filter(mercado == "lider"), aes(area = seat, fill = company, label = company)) +
+    geom_treemap(show.legend = FALSE) +
+    geom_treemap_text(fontface = "italic", colour = "white", place = "centre",
+                    grow = TRUE) +
+    theme_minimal() + 
+    ggtitle("Empresas Líderes") +
+    theme(plot.title = element_text(hjust = 0.5))
+
+# creating graphics for the followers companies
+b = ggplot(BASE %>% filter(mercado == "seguidora"), aes(area = seat, fill = company, label = company)) +
+    geom_treemap(show.legend = FALSE) +
+    geom_treemap_text(fontface = "italic", colour = "white", place = "centre",
+                    grow = TRUE) +
+    theme_minimal() + 
+    ggtitle("Empresas seguidoras") + 
+    theme(plot.title = element_text(hjust = 0.5))
+
+# joining a and b graphs
+ggarrange(a, b, ncol = 2, nrow = 1)
+
+```
+
+## Comportamento de preços do consumidor (empresa líder e seguidora)
+
+Realizando a separação entre a demanda e preços de cada empresa nos mercados em que ela assume as posições de líder e seguidora, é percebido que quando a mesma empresa assume o papel de líder a curva da demanda do consumidor é menos elástica em relação quando se posiciona como empresa seguidora. 
+
+```{r price_demand3, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# selecting database
+BASE = LBASE1 %>% ungroup() %>% filter(company %in% c("GLO", "TAM", "ONE", "AZU", "WEB")) %>%
+  select(company, seat, price, mercado, ano)
+
+# plotting to GLO company
+a = ggplot(BASE %>% filter(company == "GLO"), aes(x = seat, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting to TAM company
+b = ggplot(BASE %>% filter(company == "TAM"), aes(x = seat, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting to ONE company
+c = ggplot(BASE %>% filter(company == "ONE"), aes(x = seat, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting to AZU company
+d = ggplot(BASE %>% filter(company == "AZU"), aes(x = seat, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting to WEB company
+e = ggplot(BASE %>% filter(company == "WEB"), aes(x = seat, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# joining a and b graphs
+ggarrange(a, b, c, d, e, labels = c("Gol", "Tam", "One", "Azul", "WJ"), ncol = 3, nrow = 2)  + 
+  ggtitle("Comparativo da relação de demanda e preço em relação ao posicionamento de mercado")
+
+```
+
+## Comparativo entre distância das rotas e preços médios das passagens
+
+Nessa etapa foi realizada a avaliação da variação de preços em relação a distância média de cada rota, considerando aeroportos de desembarque de cidades turísticas (Turist), Hub's em aeroportos de embarque (ArrHub) e desembarque (DepHub).
+
+```{r distance, warning=FALSE, message=FALSE, include=TRUE, echo = FALSE}
+
+# selecting database
+BASE = BASE1 %>% ungroup() %>% 
+  filter(distance > 0) %>%
+  group_by(ano, mes, air_arr, air_dep, Turist, ArrHub, DepHUB) %>%
+  dplyr::summarise(seat = sum(seat),
+                   revenue = sum(revenue),
+                   distance = mean(distance)) %>%
+  dplyr::mutate(price = revenue / seat) %>%
+  dplyr::mutate(price = log(price),
+                distance = log(distance))
+
+# plotting the comparison between prices and distance (Turist Dummy)
+a = ggplot(BASE, aes(x = distance, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ Turist, scales = "free") 
+
+# plotting the comparison between prices and distance (ArrHub Dummy)
+b = ggplot(BASE, aes(x = distance, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ ArrHub, scales = "free") 
+
+# plotting the comparison between prices and distance (DepHub Dummy)
+c = ggplot(BASE, aes(x = distance, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ DepHUB, scales = "free") 
+
+# joining a and b graphs
+ggarrange(a, b, c, labels = c("Turist", "ArrHub", "DepHub"), ncol = 2, nrow = 2)  
+
+
+```
+
+## Comparativo entre carga paga e preços médios das passagens
+
+As aeronaves possuem dois papeis fundamentais, transportar passageiros e carga. Nessa etapa foram consideradas as cargas de mercadorias transportadas (payload), bagagem extra (bag_extra) e de correios (postload). 
+
+```{r payload, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+ 
+# selecting database
+BASE = BASE1 %>% ungroup() %>% 
+  group_by(ano, mes, air_arr, air_dep, mercado) %>%
+  dplyr::summarise(seat = sum(seat),
+                   revenue = sum(revenue),
+                   payload = sum(payload),
+                   freeload = sum(freeload),
+                   bag_extra = sum(bag_extra),
+                   bag_free = sum(bag_free),
+                   postload = sum(postload))%>%
+  dplyr::mutate(price = revenue / seat) 
+
+# plotting the comparison between payload and price (by mercado)
+a = ggplot(BASE %>% filter(payload > 0) %>% mutate(price = log(price), payload = log(payload)), 
+           aes(x = payload, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting the comparison between bag_extra and price (by mercado)
+b = ggplot(BASE %>% filter(bag_extra > 0) %>% mutate(price = log(price), bag_extra = log(bag_extra)), 
+           aes(x = bag_extra, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting the comparison between postload and price (by mercado)
+c = ggplot(BASE %>% filter(postload > 0) %>% mutate(price = log(price), postload = log(postload)),  
+           aes(x = postload, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# joining a and b graphs
+ggarrange(a, b, c, labels = c("payload", "bag_extra", "posload"), ncol = 2, nrow = 2)  
+
+```
+
+## Comparativo entre share de mercado e preços médios das passagens
+
+Foram realizadas avaliações entre o share das empresas em relação ao preço médio das passagens. Nesse caso são consideradas as participações de cada empresa em relação a frequência de voos por aeroporto (FreqShare), por número de passagens comercializadas nos aeroportos de decolagens (ArrShare) ou pouso de aeronaves (DepShare), e por cada rota (RouteShare).
+
+```{r share, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# selecting database
+BASE = BASE1 %>% ungroup() %>%
+  select(ano, mes, air_arr, air_dep, FreqShare, ArrShare, DepShare, revenue, seat, mercado, RouteShare) %>%
+  dplyr::mutate(price = log(revenue / seat),
+                FreqShare = log(FreqShare),
+                ArrShare = log(ArrShare),
+                DepShare = log(DepShare),
+                RouteShare = log(RouteShare))
+
+# plotting the comparison between FreqShare and price (by mercado)
+a = ggplot(BASE, 
+           aes(x = FreqShare, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting the comparison between ArrShare and price (by mercado)
+b = ggplot(BASE, 
+           aes(x = ArrShare, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free") 
+
+# plotting the comparison between DepShare and price (by mercado)
+c = ggplot(BASE, 
+           aes(x = DepShare, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free")
+
+# plotting the comparison between RouteShare and price (by mercado)
+d = ggplot(BASE, 
+           aes(x = RouteShare, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() +
+    facet_wrap(~ mercado, scales = "free")
+
+# joining a and b graphs
+ggarrange(a, b, c, d, labels = c("FreqShare", "ArrShare", "DepShare", "RouteShare"), ncol = 2, nrow = 2)  
+
+```
+
+## Comparativo entre o índice de concentração de mercado e preços médios das passagens
+
+Os estudos citados na base teórica do ensaio utilizam o Índice Herfindahl-Hirschman (HHI) como proxy de concentração de mercado. Nessa etapa os índices foram calculados para as participações das companhias aéreas em decolagens por aeroportos (FreqHHI) e por número de passagens nos aeroportos de decolagens (ArrHHI) e pouso de aeronaves (DepHHI).
+
+```{r HHI, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# selecting database (a and b chart)
+BASE = BASE1 %>% ungroup() %>%
+  group_by(ano, mes, air_arr, air_dep) %>%
+  dplyr::summarise(revenue = sum(revenue),
+                   seat = sum(seat),
+                   FreqHHI = mean(FreqHHI),
+                   RouteHHI = mean(RouteHHI),
+                   N = mean(N)) %>%
+  mutate(price = log(revenue/seat),
+         FreqHHI = log(FreqHHI),
+         RouteHHI = log(RouteHHI))
+
+# plotting the comparison between FreqHHI and price (by mercado)
+a = ggplot(BASE, 
+           aes(x = FreqHHI, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal()  
+
+# plotting the comparison between RouteHHI and price (by mercado)
+b = ggplot(BASE, 
+           aes(x = RouteHHI, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() 
+
+# selecting database (c chart)
+BASE = BASE1 %>% ungroup() %>%
+  group_by(ano, mes, air_arr) %>%
+  dplyr::summarise(revenue = sum(revenue),
+                   seat = sum(seat),
+                   ArrHHI = mean(ArrHHI),
+                   N = mean(N)) %>%
+  mutate(price = log(revenue/seat),
+         ArrHHI = log(ArrHHI))
+
+# plotting the comparison between ArrHHI and price (by mercado)
+c = ggplot(BASE, 
+           aes(x = ArrHHI, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() 
+
+# selecting database (d chart)
+BASE = BASE1 %>% ungroup() %>%
+  group_by(ano, mes, air_dep) %>%
+  dplyr::summarise(revenue = sum(revenue),
+                   seat = sum(seat),
+                   DepHHI = mean(DepHHI),
+                   N = mean(N)) %>%
+  mutate(price = log(revenue/seat),
+         DepHHI = log(DepHHI))
+
+# plotting the comparison between DepHHI and price (by mercado)
+d = ggplot(BASE, 
+           aes(x = DepHHI, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() 
+
+# joining a and b graphs
+ggarrange(a, b, c, d, labels = c("FreqHHI", "RouteHHI", "ArrHHI", "DepHHI"), ncol = 2, nrow = 2)  
+
+```
+
+## Comparativo entre população da microrregião e preços médios das passagens
+
+E por fim, é avaliado o tamanho populacional das microrregiões dos aeroportos de embarque e desembarque de passageiros em relação ao preço médio das passagens comercializadas.
+
+```{r pop, warning=FALSE, message=FALSE, error=FALSE, include=TRUE, echo = FALSE}
+
+# selecting database (a and b chart)
+BASE = BASE1 %>% ungroup() %>%
+  group_by(ano, mes, air_dep) %>%
+  dplyr::summarise(revenue = sum(revenue),
+                   seat = sum(seat),
+                   PopDep = mean(pop_micro_dep)) %>%
+  mutate(price = log(revenue/seat),
+         PopDep = log(PopDep))
+
+# plotting the comparison between PopDep and price (by mercado)
+a = ggplot(BASE, 
+           aes(x = PopDep, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal()  
+
+# selecting database (b chart)
+BASE = BASE1 %>% ungroup() %>%
+  group_by(ano, mes, air_arr) %>%
+  dplyr::summarise(revenue = sum(revenue),
+                   seat = sum(seat),
+                   PopArr = mean(pop_micro_arr)) %>%
+  mutate(price = log(revenue/seat),
+         PopArr = log(PopArr))
+
+# plotting the comparison between PopArr and price (by mercado)
+b = ggplot(BASE, 
+           aes(x = PopArr, y = price)) +
+    geom_point() +
+    geom_smooth(aes(group = ano), 
+              method = "lm", 
+              show.legend = FALSE) +
+    theme_minimal() 
+
+# joining a and b graphs
+ggarrange(a, b, labels = c("PopDep", "PopArr"), ncol = 2, nrow = 1)  
+
+```
+
+# Regressões - Equação de Preços
+
+```{r equations1e2, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE1 = LBASE1 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE1 = pdata.frame(dLBASE1, index = c("id","time"))
+
+# creating equations
+eq1 = price ~ payload + freq + seat + FreqShare + FreqHHI + distance + pop_micro_arr
+eq1a = price ~ payload + freq + seat + FreqShare + FreqHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) + 
+      factor(mercado)
+eq2 = price ~ payload + freq + seat + FreqShare + FreqHHI + distance + pop_micro_dep
+eq2a = price ~ payload + freq + seat + FreqShare + FreqHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) + 
+      factor(mercado)
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (FreqShare), HHI (FreqHHI) e população (pop_micro_arr)
+```{r regress1, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq1, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq1a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (FreqShare), HHI (FreqHHI) e população (pop_micro_arr)
+```{r regress2, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq2, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq2a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations3e4, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE1 = LBASE1 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE1 = pdata.frame(dLBASE1, index = c("id","time"))
+
+# creating equations
+eq3 = price ~ bag_extra + freq + seat + RouteShare + RouteHHI + distance + pop_micro_arr
+eq3a = price ~ bag_extra + freq + seat + RouteShare + RouteHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub)       + factor(mercado)
+eq4 = price ~ bag_extra + freq + seat + RouteShare + RouteHHI + distance + pop_micro_dep
+eq4a = price ~ bag_extra + freq + seat + RouteShare + RouteHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB)      + factor(mercado)
+
+```
+
+## Equação de preços em relação ao fator de carga (bag_extra), share (RouteShare), HHI (RouteHHI) e população (pop_micro_arr)
+```{r regress3, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq3, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq3a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (bag_extra), share (RouteShare), HHI (RouteHHI) e população (pop_micro_dep)
+```{r regress4, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq4, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq4a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations5e6, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE1 = LBASE1 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE1 = pdata.frame(dLBASE1, index = c("id","time"))
+
+# creating equations
+eq5 = price ~ payload + freq + seat + ArrShare + ArrHHI + distance + pop_micro_arr
+eq5a = price ~ payload + freq + seat + ArrShare + ArrHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) +           factor(mercado)
+eq6 = price ~ payload + freq + seat + ArrShare + ArrHHI + distance + pop_micro_dep
+eq6a = price ~ payload + freq + seat + ArrShare + ArrHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) +
+       factor(mercado)
+       
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (ArrShare), HHI (ArrHHI) e população (pop_micro_arr)
+```{r regress5, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq5, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq5a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (ArrShare), HHI (ArrHHI) e população (pop_micro_dep)
+```{r regress6, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq6, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq6a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations7e8, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE1 = LBASE1 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE1 = pdata.frame(dLBASE1, index = c("id","time"))
+
+# creating equations
+eq7 = price ~ payload + freq + seat + DepShare + DepHHI + distance + pop_micro_arr
+eq7a = price ~ payload + freq + seat + DepShare + DepHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) +           factor(mercado)
+eq8 = price ~ payload + freq + seat + DepShare + DepHHI + distance + pop_micro_dep
+eq8a = price ~ payload + freq + seat + DepShare + DepHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) +
+       factor(mercado)
+       
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (DepShare), HHI (DepHHI) e população (pop_micro_arr)
+```{r regress7, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq5, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq5a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), share (DepShare), HHI (DepHHI) e população (pop_micro_dep)
+```{r regress8, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq6, dLBASE1, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq6a, dLBASE1, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+# Regressões - Equação de Preços em diferença (empresa líder x seguidora)
+
+```{r equations1e2d, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE2 = LBASE2 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE2 = pdata.frame(dLBASE2, index = c("id","time"))
+
+# creating equations
+eq1 = price ~ payload + freq + seat + FreqHHI + distance + pop_micro_arr
+eq1a = price ~ payload + freq + seat + FreqHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) + factor(N)
+eq2 = price ~ payload + freq + seat + FreqHHI + distance + pop_micro_dep
+eq2a = price ~ payload + freq + seat + FreqHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) + factor(N)
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), HHI (FreqHHI) e população (pop_micro_arr)
+```{r regress1d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq1, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq1a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload),  HHI (FreqHHI) e população (pop_micro_arr)
+```{r regress2d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq2, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq2a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations3e4d, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE2 = LBASE2 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE2 = pdata.frame(dLBASE2, index = c("id","time"))
+
+# creating equations
+eq3 = price ~ bag_extra + freq + seat + RouteHHI + distance + pop_micro_arr
+eq3a = price ~ bag_extra + freq + seat + RouteHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) + factor(N)
+eq4 = price ~ bag_extra + freq + seat + RouteHHI + distance + pop_micro_dep
+eq4a = price ~ bag_extra + freq + seat + RouteHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) + factor(N)
+
+```
+
+## Equação de preços em relação ao fator de carga (bag_extra), HHI (RouteHHI) e população (pop_micro_arr)
+```{r regress3d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq3, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq3a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (bag_extra), HHI (RouteHHI) e população (pop_micro_dep)
+```{r regress4d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq4, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq4a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations5e6d, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE2 = LBASE2 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE2 = pdata.frame(dLBASE2, index = c("id","time"))
+
+# creating equations
+eq5 = price ~ payload + freq + seat + ArrHHI + distance + pop_micro_arr
+eq5a = price ~ payload + freq + seat + ArrHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) + factor(N)
+eq6 = price ~ payload + freq + seat + ArrHHI + distance + pop_micro_dep
+eq6a = price ~ payload + freq + seat + ArrHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) + factor(N)
+       
+```
+
+## Equação de preços em relação ao fator de carga (payload), HHI (ArrHHI) e população (pop_micro_arr)
+```{r regress5d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq5, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq5a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), HHI (ArrHHI) e população (pop_micro_dep)
+```{r regress6d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq6, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq6a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+```{r equations7e8d, warning=FALSE, message=FALSE, error=FALSE, include=FALSE, echo = FALSE }
+
+# organizing database
+dLBASE2 = LBASE2 %>% group_by(ano, mes) %>% mutate(id = sequence(n()),
+                                                  time = paste0(ano,"/", mes))
+# transforming to panel data
+dLBASE2 = pdata.frame(dLBASE2, index = c("id","time"))
+
+# creating equations
+eq7 = price ~ payload + freq + seat + DepHHI + distance + pop_micro_arr
+eq7a = price ~ payload + freq + seat + DepHHI + distance + pop_micro_arr + factor(Turist) + factor(ArrHub) + factor(N)
+eq8 = price ~ payload + freq + seat  + DepHHI + distance + pop_micro_dep
+eq8a = price ~ payload + freq + seat + DepHHI + distance + pop_micro_dep + factor(Turist) + factor(DepHUB) + factor(N)
+       
+```
+
+## Equação de preços em relação ao fator de carga (payload), HHI (DepHHI) e população (pop_micro_arr)
+```{r regress7d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq5, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq5a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+## Equação de preços em relação ao fator de carga (payload), HHI (DepHHI) e população (pop_micro_dep)
+```{r regress8d, echo=FALSE}
+
+# performing regressions
+ols_a =      plm(eq6, dLBASE2, model = "pooling")
+between_a =  update(ols_a, model = "between")
+within_a  =  update(ols_a, model = "within")
+
+ols_b =      plm(eq6a, dLBASE2, model = "pooling")
+between_b =  update(ols_b, model = "between")
+within_b  =  update(ols_b, model = "within")
+
+
+# joining regression results
+screenreg(list(ols = ols_a, between = between_a, within = within_a, 
+              ols = ols_b, between = between_b, within = within_b),
+              digits = 3, omit.coef = "(Intercept)")
+
+```
+
+
+
+
+
+
